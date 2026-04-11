@@ -1,4 +1,4 @@
-## Interface: 30403, 38000
+## Interface: 30403, 38000, 38001
 ## Title: MultiLanguage
 ## Notes: Tooltip displaying data in another language
 ## Author: Ruben Zantingh

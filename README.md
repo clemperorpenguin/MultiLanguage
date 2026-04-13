@@ -1,4 +1,4 @@
-# MultiLanguage
+# MultiLanguage-TR
 
 ## Description
 This addon aims to offer players the possibility to play the game in their preferred locale while also having access to the texts in another locale. It can offer players who don't have a certain locale as their primary language some help communicating with other players while discussing items, quests, or NPCs. On the other hand, it might also be used to passively learn a new language when playing. Updated for Titan Reforged.

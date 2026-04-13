@@ -1,5 +1,5 @@
-## Interface: 30403, 38000, 38001
-## Title: MultiLanguage
+## Interface: 38001
+## Title: MultiLanguage-TR
 ## Notes: Tooltip displaying data in another language
 ## Author: Clementine Pendragon, Ruben Zantingh
 ## Version: 0.4.0

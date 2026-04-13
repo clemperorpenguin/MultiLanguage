@@ -1,9 +1,10 @@
 ## Interface: 30403, 38000, 38001
 ## Title: MultiLanguage
 ## Notes: Tooltip displaying data in another language
-## Author: Ruben Zantingh
-## Version: 0.2.2
+## Author: Clementine Pendragon, Ruben Zantingh
+## Version: 0.4.0
 ## SavedVariables: MultiLanguageOptions
+## SavedVariablesPerAccount: MultiLanguageOptionsAccount
 
 Database/items.lua
 Database/npcs.lua

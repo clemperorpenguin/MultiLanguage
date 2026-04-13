@@ -3,7 +3,7 @@ local defaultOptions = {
     ITEM_TRANSLATIONS = true,
     SPELL_TRANSLATIONS = true,
     NPC_TRANSLATIONS = true,
-    SELECTED_LANGUAGE = 'en',
+    SELECTED_LANGUAGE = nil, -- Will be set to client locale on first run
     SELECTED_INTERACTION = 'hover',
     SELECTED_HOTKEY = nil,
     AVAILABLE_LANGUAGES = {
@@ -13,195 +13,242 @@ local defaultOptions = {
 
 local addonName = ...
 local optionsFrame = CreateFrame("Frame")
+local hotkeyButton = nil
+local waitingForKey = false
 
-local function CreateCheckBox(parent, optionsPanel, text, onClick)
-    local checkbox = CreateFrame("CheckButton", nil, optionsPanel, "InterfaceOptionsCheckButtonTemplate")
-    checkbox.Text:SetText(text)
-    checkbox:SetScript("OnClick", onClick)
+-- Merge account-wide and per-character settings
+local function MergeSettings()
+    MultiLanguageOptions = MultiLanguageOptions or {}
+    MultiLanguageOptionsAccount = MultiLanguageOptionsAccount or {}
 
-    return checkbox
-end
+    -- Apply account-wide defaults first
+    for key, value in pairs(defaultOptions) do
+        if MultiLanguageOptionsAccount[key] == nil then
+            MultiLanguageOptionsAccount[key] = value
+        end
+    end
 
-local function createOptionCheckbox(parent, optionsPanel, text, optionKey)
-    local checkbox = CreateCheckBox(parent, optionsPanel, text, function(self)
-        local checked = self:GetChecked()
-        MultiLanguageOptions[optionKey] = checked
-    end)
+    -- Per-character settings override account-wide for character-specific preferences
+    for key, value in pairs(defaultOptions) do
+        if MultiLanguageOptions[key] == nil then
+            -- Use account-wide value if available, otherwise default
+            if MultiLanguageOptionsAccount[key] ~= nil then
+                MultiLanguageOptions[key] = MultiLanguageOptionsAccount[key]
+            else
+                MultiLanguageOptions[key] = value
+            end
+        end
+    end
 
-    checkbox:SetPoint("TOPLEFT", parent, "BOTTOMLEFT", 0, -8)
-    checkbox:SetChecked(MultiLanguageOptions[optionKey])
-    return checkbox
+    -- Set default language to client locale if not set
+    if MultiLanguageOptionsAccount.SELECTED_LANGUAGE == nil then
+        -- Auto-detect from client locale
+        local clientLocale = GetLocale()
+        if clientLocale == "enUS" or clientLocale == "enGB" then
+            MultiLanguageOptionsAccount.SELECTED_LANGUAGE = "en"
+        elseif clientLocale == "esES" or clientLocale == "esMX" then
+            MultiLanguageOptionsAccount.SELECTED_LANGUAGE = "es"
+        elseif clientLocale == "deDE" then
+            MultiLanguageOptionsAccount.SELECTED_LANGUAGE = "de"
+        elseif clientLocale == "frFR" then
+            MultiLanguageOptionsAccount.SELECTED_LANGUAGE = "fr"
+        elseif clientLocale == "ptBR" then
+            MultiLanguageOptionsAccount.SELECTED_LANGUAGE = "ptBR"
+        elseif clientLocale == "ruRU" then
+            MultiLanguageOptionsAccount.SELECTED_LANGUAGE = "ru"
+        elseif clientLocale == "zhCN" then
+            MultiLanguageOptionsAccount.SELECTED_LANGUAGE = "zhCN"
+        elseif clientLocale == "zhTW" then
+            MultiLanguageOptionsAccount.SELECTED_LANGUAGE = "zhTW"
+        elseif clientLocale == "koKR" then
+            MultiLanguageOptionsAccount.SELECTED_LANGUAGE = "koKR"
+        else
+            MultiLanguageOptionsAccount.SELECTED_LANGUAGE = "en"
+        end
+        -- Sync per-character setting
+        if MultiLanguageOptions.SELECTED_LANGUAGE == nil then
+            MultiLanguageOptions.SELECTED_LANGUAGE = MultiLanguageOptionsAccount.SELECTED_LANGUAGE
+        end
+    end
+
+    -- Sync missing per-character settings from account-wide
+    for key, value in pairs(MultiLanguageOptionsAccount) do
+        if MultiLanguageOptions[key] == nil then
+            MultiLanguageOptions[key] = value
+        end
+    end
 end
 
 local function InitializeOptions()
-    local optionsPanel = CreateFrame("Frame", "MultiLanguageOptionsPanel", UIParent)
-    optionsPanel.name = "MultiLanguage"
+    MergeSettings()
 
-    local title = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("MultiLanguage")
+    local category, layout = Settings.RegisterVerticalLayoutCategory("MultiLanguage")
 
-    local languageDropdownDescription = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontnormalSmall")
-    languageDropdownDescription:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -16)
-    languageDropdownDescription:SetText("Select language:")
-
-    local languageDropdown = CreateFrame("Frame", "MultiLanguageLanguageDropdown", optionsPanel, "UIDropDownMenuTemplate")
-    languageDropdown:SetPoint("TOPLEFT", languageDropdownDescription, "BOTTOMLEFT", -16, -4)
-
-    local function OnLanguageDropdownValueChanged(self, arg1, arg2, checked)
-        MultiLanguageOptions.SELECTED_LANGUAGE = arg1
-        UIDropDownMenu_SetText(languageDropdown, arg2)
+    -- Quest Translations
+    local function GetQuestTranslationsValue()
+        return MultiLanguageOptions["QUEST_TRANSLATIONS"]
     end
 
-    local function SetSelectedLanguageText(languageText, selectedLanguageText, checked)
-        if checked then
-            return selectedLanguageText
+    local function SetQuestTranslationsValue(value)
+        MultiLanguageOptions["QUEST_TRANSLATIONS"] = value
+        MultiLanguageOptionsAccount["QUEST_TRANSLATIONS"] = value
+    end
+
+    local questTranslationsSetting = Settings.RegisterProxySetting(category, "MULTILANGUAGE_QUEST_TRANSLATIONS",
+        Settings.VarType.Boolean, "Enable quest translations", Settings.Default.True, GetQuestTranslationsValue, SetQuestTranslationsValue)
+    Settings.CreateCheckbox(category, questTranslationsSetting)
+
+    -- Item Translations
+    local function GetItemTranslationsValue()
+        return MultiLanguageOptions["ITEM_TRANSLATIONS"]
+    end
+
+    local function SetItemTranslationsValue(value)
+        MultiLanguageOptions["ITEM_TRANSLATIONS"] = value
+        MultiLanguageOptionsAccount["ITEM_TRANSLATIONS"] = value
+    end
+
+    local itemTranslationsSetting = Settings.RegisterProxySetting(category, "MULTILANGUAGE_ITEM_TRANSLATIONS",
+        Settings.VarType.Boolean, "Enable item translations", Settings.Default.True, GetItemTranslationsValue, SetItemTranslationsValue)
+    Settings.CreateCheckbox(category, itemTranslationsSetting)
+
+    -- Spell Translations
+    local function GetSpellTranslationsValue()
+        return MultiLanguageOptions["SPELL_TRANSLATIONS"]
+    end
+
+    local function SetSpellTranslationsValue(value)
+        MultiLanguageOptions["SPELL_TRANSLATIONS"] = value
+        MultiLanguageOptionsAccount["SPELL_TRANSLATIONS"] = value
+    end
+
+    local spellTranslationsSetting = Settings.RegisterProxySetting(category, "MULTILANGUAGE_SPELL_TRANSLATIONS",
+        Settings.VarType.Boolean, "Enable spell translations", Settings.Default.True, GetSpellTranslationsValue, SetSpellTranslationsValue)
+    Settings.CreateCheckbox(category, spellTranslationsSetting)
+
+    -- NPC Translations
+    local function GetNpcTranslationsValue()
+        return MultiLanguageOptions["NPC_TRANSLATIONS"]
+    end
+
+    local function SetNpcTranslationsValue(value)
+        MultiLanguageOptions["NPC_TRANSLATIONS"] = value
+        MultiLanguageOptionsAccount["NPC_TRANSLATIONS"] = value
+    end
+
+    local npcTranslationsSetting = Settings.RegisterProxySetting(category, "MULTILANGUAGE_NPC_TRANSLATIONS",
+        Settings.VarType.Boolean, "Enable NPC translations", Settings.Default.True, GetNpcTranslationsValue, SetNpcTranslationsValue)
+    Settings.CreateCheckbox(category, npcTranslationsSetting)
+
+    -- Language Dropdown
+    local function GetSelectedLanguageValue()
+        return MultiLanguageOptions["SELECTED_LANGUAGE"]
+    end
+
+    local function SetSelectedLanguageValue(value)
+        MultiLanguageOptions["SELECTED_LANGUAGE"] = value
+        MultiLanguageOptionsAccount["SELECTED_LANGUAGE"] = value
+    end
+
+    local function GetLanguageOptions()
+        local container = Settings.CreateControlTextContainer()
+        for i, lang in ipairs(MultiLanguageOptions.AVAILABLE_LANGUAGES) do
+            container:Add(lang.value, lang.text)
         end
-
-        return languageText
+        return container:GetData()
     end
 
-    local function InitializeLanguageDropdown()
-        local info = UIDropDownMenu_CreateInfo()
-        local languageText = "English"
+    local languageSetting = Settings.RegisterProxySetting(category, "MULTILANGUAGE_SELECTED_LANGUAGE",
+        Settings.VarType.String, "Language", Settings.Default.String("en"), GetSelectedLanguageValue, SetSelectedLanguageValue)
+    Settings.CreateDropdown(category, languageSetting, GetLanguageOptions, "Select language:")
 
-        for index, language in ipairs(MultiLanguageOptions.AVAILABLE_LANGUAGES) do
-            info.text = language.text
-            info.value = language.value
-            info.arg1 = info.value
-            info.arg2 = info.text
-            info.checked = MultiLanguageOptions.SELECTED_LANGUAGE == language.value
-            info.func = OnLanguageDropdownValueChanged
-            info.minWidth = 145
-            languageText = SetSelectedLanguageText(languageText, info.text, info.checked)
-            UIDropDownMenu_AddButton(info)
-        end
-
-        UIDropDownMenu_SetText(languageDropdown, languageText)
-        UIDropDownMenu_SetAnchor(languageDropdown, 16, 4, "TOPLEFT", languageDropdown, "BOTTOMLEFT")
+    -- Interaction Dropdown
+    local function GetSelectedInteractionValue()
+        return MultiLanguageOptions["SELECTED_INTERACTION"]
     end
 
-    function AddLanguageDropdownOption()
-        InitializeLanguageDropdown()
+    local function SetSelectedInteractionValue(value)
+        MultiLanguageOptions["SELECTED_INTERACTION"] = value
+        MultiLanguageOptionsAccount["SELECTED_INTERACTION"] = value
     end
 
-    local enableQuestTranslationCheckbox = createOptionCheckbox(languageDropdown, optionsPanel,"Enable quest translations", "QUEST_TRANSLATIONS")
-    enableQuestTranslationCheckbox:SetPoint("TOPLEFT", languageDropdown, "BOTTOMLEFT", 16, -8)
-    local enableItemTranslationCheckbox = createOptionCheckbox(enableQuestTranslationCheckbox, optionsPanel, "Enable item translations", "ITEM_TRANSLATIONS")
-    local enableSpellTranslationCheckbox = createOptionCheckbox(enableItemTranslationCheckbox, optionsPanel, "Enable spell translations", "SPELL_TRANSLATIONS")
-    local enableNpcTranslationCheckbox = createOptionCheckbox(enableSpellTranslationCheckbox, optionsPanel, "Enable npc translations", "NPC_TRANSLATIONS")
-
-    UIDropDownMenu_SetWidth(languageDropdown, 150)
-    UIDropDownMenu_Initialize(languageDropdown, InitializeLanguageDropdown)
-
-    local interactionDropdownDescription = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontnormalSmall")
-    interactionDropdownDescription:SetPoint("TOPLEFT", enableNpcTranslationCheckbox, "BOTTOMLEFT", 0, -8)
-    interactionDropdownDescription:SetText("Select interaction:")
-
-    local interactionDropdown = CreateFrame("Frame", "MultiLanguageInteractionDropdown", optionsPanel, "UIDropDownMenuTemplate")
-    interactionDropdown:SetPoint("TOPLEFT", interactionDropdownDescription, "BOTTOMLEFT", -16, -4)
-
-    local function SetSelectedInteractionText(interactionText, selectedInteractionText, checked)
-        if checked then
-            return selectedInteractionText
-        end
-
-        return interactionText
+    local function GetInteractionOptions()
+        local container = Settings.CreateControlTextContainer()
+        container:Add("hover", "Hover")
+        container:Add("hover-hotkey", "Hover + hotkey")
+        return container:GetData()
     end
 
-    local function OnInteractionDropdownValueChanged(self, arg1, arg2, checked)
-        MultiLanguageOptions.SELECTED_INTERACTION = arg1
-        UIDropDownMenu_SetText(interactionDropdown, arg2)
-    end
+    local interactionSetting = Settings.RegisterProxySetting(category, "MULTILANGUAGE_SELECTED_INTERACTION",
+        Settings.VarType.String, "Interaction", Settings.Default.String("hover"), GetSelectedInteractionValue, SetSelectedInteractionValue)
+    Settings.CreateDropdown(category, interactionSetting, GetInteractionOptions, "Select interaction:")
 
-    local function InitializeInteractionDropdown()
-        local info = UIDropDownMenu_CreateInfo()
-        local interactionText = "Hover"
+    -- Hotkey Frame
+    local hotkeyFrame = CreateFrame("Frame")
+    hotkeyFrame:SetHeight(60)
 
-        info.text = "Hover"
-        info.value = "hover"
-        info.arg1 = info.value
-        info.arg2 = info.text
-        info.checked = MultiLanguageOptions.SELECTED_INTERACTION == "hover"
-        info.func = OnInteractionDropdownValueChanged
-        info.minWidth = 145
-        interactionText = SetSelectedInteractionText(interactionText, info.text, info.checked)
-        UIDropDownMenu_AddButton(info)
-
-        info.text = "Hover + hotkey"
-        info.value = "hover-hotkey"
-        info.arg1 = info.value
-        info.arg2 = info.text
-        info.checked = MultiLanguageOptions.SELECTED_INTERACTION == "hover-hotkey"
-        info.func = OnInteractionDropdownValueChanged
-        info.minWidth = 145
-        interactionText = SetSelectedInteractionText(interactionText, info.text, info.checked)
-        UIDropDownMenu_AddButton(info)
-
-        UIDropDownMenu_SetText(interactionDropdown, interactionText)
-        UIDropDownMenu_SetAnchor(interactionDropdown, 16, 4, "TOPLEFT", interactionDropdown, "BOTTOMLEFT")
-    end
-
-    UIDropDownMenu_SetWidth(interactionDropdown, 150)
-    UIDropDownMenu_Initialize(interactionDropdown, InitializeInteractionDropdown)
-
-    local hotkeyDescription = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontnormalSmall")
-    hotkeyDescription:SetPoint("TOPLEFT", interactionDropdown, "BOTTOMLEFT", 16, -8)
+    local hotkeyDescription = hotkeyFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    hotkeyDescription:SetPoint("TOPLEFT", 0, 0)
     hotkeyDescription:SetText("Register Hotkey (right-click to unbind):")
 
-    local registerHotkeyButton = CreateFrame("Button", "MultiLanguageRegisterHotkeyButton", optionsPanel, "UIPanelButtonTemplate")
-    registerHotkeyButton:SetWidth(120)
-    registerHotkeyButton:SetHeight(25)
-    registerHotkeyButton:SetPoint("TOPLEFT", hotkeyDescription, "TOPLEFT", 0, -12)
+    hotkeyButton = CreateFrame("Button", "MultiLanguageRegisterHotkeyButton", hotkeyFrame, "UIPanelButtonTemplate")
+    hotkeyButton:SetWidth(120)
+    hotkeyButton:SetHeight(25)
+    hotkeyButton:SetPoint("TOPLEFT", hotkeyDescription, "TOPLEFT", 0, -18)
 
     if MultiLanguageOptions.SELECTED_HOTKEY then
-        registerHotkeyButton:SetText(MultiLanguageOptions.SELECTED_HOTKEY)
+        hotkeyButton:SetText(MultiLanguageOptions.SELECTED_HOTKEY)
     else
-        registerHotkeyButton:SetText("Not Bound")
+        hotkeyButton:SetText("Not Bound")
     end
 
-    local waitingForKey = false
-
-    registerHotkeyButton:SetScript("OnMouseDown", function(self, button)
+    hotkeyButton:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
             if not waitingForKey then
                 waitingForKey = true
-                registerHotkeyButton:SetText("Press button..")
+                hotkeyButton:SetText("Press button..")
             end
         elseif button == "RightButton" then
             waitingForKey = false
-            registerHotkeyButton:SetText("Not Bound")
+            hotkeyButton:SetText("Not Bound")
             MultiLanguageOptions.SELECTED_HOTKEY = nil
+            MultiLanguageOptionsAccount.SELECTED_HOTKEY = nil
         end
     end)
 
-    local function SetHotkeyButton(self, key)
+    hotkeyButton:SetScript("OnKeyDown", function(self, key)
         if waitingForKey then
             MultiLanguageOptions.SELECTED_HOTKEY = key
-            registerHotkeyButton:SetText(MultiLanguageOptions.SELECTED_HOTKEY)
+            MultiLanguageOptionsAccount.SELECTED_HOTKEY = key
+            hotkeyButton:SetText(MultiLanguageOptions.SELECTED_HOTKEY)
             waitingForKey = false
         end
-    end
+    end)
+    hotkeyButton:SetPropagateKeyboardInput(true)
 
-    registerHotkeyButton:SetScript("OnKeyDown", SetHotkeyButton)
-    registerHotkeyButton:SetPropagateKeyboardInput(true)
+    Settings.RegisterCanvasLayoutSubcategory(category, hotkeyFrame, "Hotkey")
 
-    InterfaceOptions_AddCategory(optionsPanel)
+    Settings.RegisterAddOnCategory(category)
 end
 
 local function addonLoaded(self, event, addonLoadedName)
     if addonLoadedName == addonName then
-        MultiLanguageOptions = MultiLanguageOptions or defaultOptions
-        
-        for key, value in pairs(defaultOptions) do
-            if MultiLanguageOptions[key] == nil then
-                MultiLanguageOptions[key] = value
-            end
-        end
-
         InitializeOptions()
     end
 end
 
 optionsFrame:RegisterEvent("ADDON_LOADED")
 optionsFrame:SetScript("OnEvent", addonLoaded)
+
+-- Expose hotkey state for the main translation frame
+function MultiLanguage_IsWaitingForKey()
+    return waitingForKey
+end
+
+function MultiLanguage_SetWaitingForKey(value)
+    waitingForKey = value
+end
+
+function MultiLanguage_GetHotkeyButton()
+    return hotkeyButton
+end
